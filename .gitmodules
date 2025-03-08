@@ -61,3 +61,6 @@
 [submodule "src/graphics/colors"]
 	path = src/graphics/colors
 	url = git@github.com:cpp-toolbox/colors.git
+[submodule "src/utility/print_utils"]
+	path = src/utility/print_utils
+	url = git@github.com:cpp-toolbox/print_utils.git
