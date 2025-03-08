@@ -56,8 +56,8 @@ int main() {
     GLFWLambdaCallbackManager glcm(window.glfw_window, char_callback, key_callback, mouse_pos_callback,
                                    mouse_button_callback, frame_buffer_size_callback);
 
-    auto unit_cube = vertex_geometry::generate_unit_cube();
-    Transform unit_cube_transform;
+    auto ball = vertex_geometry::generate_icosphere(3, 1);
+    Transform ball_transform;
 
     glm::mat4 identity = glm::mat4(1);
     shader_cache.set_uniform(ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_SOLID_COLOR,
@@ -93,11 +93,11 @@ int main() {
         shader_cache.set_uniform(ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_SOLID_COLOR,
                                  ShaderUniformVariable::WORLD_TO_CAMERA, fps_camera.get_view_matrix());
 
-        std::vector<unsigned int> ltw_indices(unit_cube.xyz_positions.size(), 0);
+        std::vector<unsigned int> ltw_indices(ball.xyz_positions.size(), 0);
         batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
-            0, unit_cube.indices, unit_cube.xyz_positions, ltw_indices);
+            0, ball.indices, ball.xyz_positions, ltw_indices);
 
-        ltw_matrices[0] = unit_cube_transform.get_transform_matrix();
+        ltw_matrices[0] = ball_transform.get_transform_matrix();
 
         batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.draw_everything();
 
