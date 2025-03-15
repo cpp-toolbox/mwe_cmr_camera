@@ -12,6 +12,7 @@
 #include "graphics/vertex_geometry/vertex_geometry.hpp"
 #include "graphics/shader_standard/shader_standard.hpp"
 #include "graphics/batcher/generated/batcher.hpp"
+#include "graphics/catmull_rom_interpolator/catmull_rom_interpolator.hpp"
 #include "graphics/shader_cache/shader_cache.hpp"
 #include "graphics/fps_camera/fps_camera.hpp"
 #include "graphics/window/window.hpp"
@@ -94,6 +95,10 @@ int main() {
     auto ball = vertex_geometry::generate_cylinder(8, 1, 1);
     Transform ball_transform;
 
+    double duration = 10.0;
+    CatmullRomInterpolator cmr(10.0, 0.5f);
+    int num_samples = 1000;
+
     std::function<void(double)> tick = [&](double dt) {
         /*glfwGetFramebufferSize(window, &width, &height);*/
 
@@ -121,19 +126,17 @@ int main() {
 
             fake_spline_pos_and_tangent_vec.push_back(
                 {cam_indicator_tig_copy.transform.get_translation(), fps_camera.transform.compute_forward_vector()});
+            cmr.append_point(fps_camera.transform.get_translation());
         }
 
         if (input_state.is_just_pressed(EKey::p)) {
 
-            /*p("making spline now");*/
-            /*spline_ivp = std::make_unique<draw_info::IndexedVertexPositions>(*/
-            /*    vertex_geometry::generate_segmented_cylinder(fake_spline_pos_and_tangent_vec, 0.5f, 8));*/
-
-            std::function<glm::vec3(double)> f = [](double t) { return glm::vec3(std::cos(t), std::sin(t), t); };
+            std::function<glm::vec3(double)> f = [&](double t) { return cmr.interpolate(t); };
 
             double t_start = 0.0;
-            double t_end = 10.0;
-            double step_size = 0.1;
+            double t_end = duration;
+            double step_size = 0.001;
+            double radius = 0.1;
             double finite_diff_delta = 1e-5;
 
             spline_ivp = std::make_unique<draw_info::IndexedVertexPositions>(
