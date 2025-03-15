@@ -80,7 +80,7 @@ int main() {
     vertex_geometry::translate_vertices_in_place(cam_indicator_ivp.xyz_positions, glm::vec3(0, -1, 0));
     auto cone = vertex_geometry::generate_cone(16, 1, .25);
     vertex_geometry::merge_ivps(cam_indicator_ivp, cone);
-    vertex_geometry::rotate_vertices_in_place(cam_indicator_ivp.xyz_positions, glm::vec3(.25, .25, 0));
+    vertex_geometry::rotate_vertices_in_place(cam_indicator_ivp.xyz_positions, glm::vec3(.25, 0.5, 0));
     draw_info::TransformedIVPGroup cam_indicator_tig_for_copying({cam_indicator_ivp}, ltw_id_generator.get_id());
     std::vector<draw_info::TransformedIVPGroup> cam_indicators;
 
@@ -110,34 +110,35 @@ int main() {
             auto cam_indicator_tig_copy = cam_indicator_tig_for_copying;
             cam_indicator_tig_copy.id = ltw_id_generator.get_id();
             for (auto &ivp : cam_indicator_tig_copy.ivps) {
-                ivp.id =
-                    batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.object_id_generator.get_id();
+                ivp.id = GlobalUIDGenerator::get_id();
             }
-            cam_indicator_tig_copy.transform = fps_camera.transform;
+            cam_indicator_tig_copy.transform.set_transform_matrix(create_position_and_look_transform(
+                fps_camera.transform.get_translation(), fps_camera.transform.compute_forward_vector()));
             // TODO: figure out why think has to dowith the way Look at works opposite movement somethin something
-            cam_indicator_tig_copy.transform.rotation *= -1;
+            /*cam_indicator_tig_copy.transform.rotation *= -1;*/
             p(cam_indicator_tig_copy.transform);
             cam_indicators.push_back(cam_indicator_tig_copy);
 
             fake_spline_pos_and_tangent_vec.push_back(
-                {cam_indicator_tig_copy.transform.position, fps_camera.transform.compute_forward_vector()});
+                {cam_indicator_tig_copy.transform.get_translation(), fps_camera.transform.compute_forward_vector()});
         }
 
         if (input_state.is_just_pressed(EKey::p)) {
-            p("making spline now");
-            spline_ivp = std::make_unique<draw_info::IndexedVertexPositions>(
-                vertex_geometry::generate_segmented_cylinder(fake_spline_pos_and_tangent_vec, 0.5f, 8));
 
-            /*std::function<glm::vec3(double)> f = [](double t) { return glm::vec3(std::cos(t), std::sin(t), t); };*/
-            /**/
-            /*double t_start = 0.0;*/
-            /*double t_end = 10.0;*/
-            /*double step_size = 0.1;*/
-            /*double finite_diff_delta = 1e-5;*/
-            /**/
+            /*p("making spline now");*/
             /*spline_ivp = std::make_unique<draw_info::IndexedVertexPositions>(*/
-            /*    vertex_geometry::generate_function_visualization(f, t_start, t_end, step_size, finite_diff_delta));*/
-            /*p(*spline_ivp);*/
+            /*    vertex_geometry::generate_segmented_cylinder(fake_spline_pos_and_tangent_vec, 0.5f, 8));*/
+
+            std::function<glm::vec3(double)> f = [](double t) { return glm::vec3(std::cos(t), std::sin(t), t); };
+
+            double t_start = 0.0;
+            double t_end = 10.0;
+            double step_size = 0.1;
+            double finite_diff_delta = 1e-5;
+
+            spline_ivp = std::make_unique<draw_info::IndexedVertexPositions>(
+                vertex_geometry::generate_function_visualization(f, t_start, t_end, step_size, finite_diff_delta));
+            p(*spline_ivp);
         }
 
         shader_cache.set_uniform(ShaderType::CWL_V_TRANSFORMATION_UBOS_1024_WITH_SOLID_COLOR,
@@ -157,7 +158,7 @@ int main() {
 
         ltw_matrices[ball_ltw_id] = ball_transform.get_transform_matrix();
 
-        for (const auto &cam_indicator_tig : cam_indicators) {
+        for (auto &cam_indicator_tig : cam_indicators) {
             for (const auto &ivp : cam_indicator_tig.ivps) {
                 std::vector<unsigned int> ltw_indices(ivp.xyz_positions.size(), cam_indicator_tig.id);
                 batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
