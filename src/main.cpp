@@ -8,6 +8,7 @@
 #include "utility/fixed_frequency_loop/fixed_frequency_loop.hpp"
 #include "utility/unique_id_generator/unique_id_generator.hpp"
 #include "utility/print_utils/print_utils.hpp"
+#include "utility/math_utils/math_utils.hpp"
 
 #include "graphics/catmull_rom_interpolator/catmull_rom_interpolator.hpp"
 #include "graphics/scripted_transform/scripted_transform.hpp"
@@ -20,6 +21,7 @@
 #include "graphics/colors/colors.hpp"
 
 #include <iostream>
+#include <locale>
 
 int main() {
     Colors colors;
@@ -84,34 +86,34 @@ int main() {
     vertex_geometry::merge_ivps(cam_indicator_ivp, cone);
     vertex_geometry::rotate_vertices_in_place(cam_indicator_ivp.xyz_positions, glm::vec3(.25, 0.5, 0));
     draw_info::TransformedIVPGroup cam_indicator_tig_for_copying({cam_indicator_ivp}, ltw_id_generator.get_id());
-    std::vector<draw_info::TransformedIVPGroup> cam_indicators;
+
+    bool selected_keyframe_index_requires_update = false;
+    unsigned int selected_keyframe_index = 0;
+    std::vector<draw_info::TransformedIVPGroup> cam_keyframe_indicators;
 
     int camera_quad_strip_ltw_id = ltw_id_generator.get_id();
     std::unique_ptr<draw_info::IndexedVertexPositions> camera_quad_strip_ivp;
     std::vector<Transform> cmr_sampled_transforms;
 
-    std::vector<std::pair<glm::vec3, glm::vec3>> fake_spline_pos_and_tangent_vec;
+    auto selected_keyframe_indicator_ivp = vertex_geometry::generate_icosphere(2, 1); // ski
+    draw_info::TransformedIVPGroup ski_tig({selected_keyframe_indicator_ivp}, ltw_id_generator.get_id());
 
     int ball_ltw_id = ltw_id_generator.get_id();
     /*auto ball = vertex_geometry::generate_icosphere(3, 1);*/
-    auto ball = vertex_geometry::generate_cylinder(8, 1, 1);
+    auto cyl = vertex_geometry::generate_cylinder(8, 1, 1);
     Transform ball_transform;
+
+    bool has_unbuffered_changes = false;
 
     double duration = 10.0;
     double tau = 0.5f;
-
-    // NOTE: if the interpolators inside scripted transform were public I wouldn't have to do this,
-    // not caring for right now.
-    CatmullRomInterpolator cmr(duration, tau);
 
     bool camera_is_controlled_by_scripted_transform = false;
     ScriptedTransform cmr_scripted_transform(duration, tau);
     int num_samples = 1000;
 
     std::function<void(double)> tick = [&](double dt) {
-        /*glfwGetFramebufferSize(window, &width, &height);*/
-
-        glViewport(0, 0, window_width_px, window_width_px);
+        glViewport(0, 0, window_width_px, window_height_px);
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -128,22 +130,12 @@ int main() {
             }
             cam_indicator_tig_copy.transform.set_transform_matrix(create_position_and_look_transform(
                 fps_camera.transform.get_translation(), fps_camera.transform.compute_forward_vector()));
-            // TODO: figure out why think has to dowith the way Look at works opposite movement somethin something
-            /*cam_indicator_tig_copy.transform.rotation *= -1;*/
-            p(cam_indicator_tig_copy.transform);
-            cam_indicators.push_back(cam_indicator_tig_copy);
+            cam_keyframe_indicators.push_back(cam_indicator_tig_copy);
 
-            fake_spline_pos_and_tangent_vec.push_back(
-                {cam_indicator_tig_copy.transform.get_translation(), fps_camera.transform.compute_forward_vector()});
-            cmr.append_point(fps_camera.transform.get_translation()); // delete
             cmr_scripted_transform.append_keyframe(fps_camera.transform);
         }
 
         if (input_state.is_just_pressed(EKey::p)) {
-
-            std::function<glm::vec3(double)> f = [&](double t) { return cmr.interpolate(t); };
-            /*std::function<glm::vec3(double)> f = [](double t) { return glm::vec3(std::cos(2 * t), std::sin(t), t);
-             * };*/
 
             double t_start = 0.0;
             double t_end = duration;
@@ -168,10 +160,37 @@ int main() {
 
             camera_quad_strip_ivp = std::make_unique<draw_info::IndexedVertexPositions>(
                 vertex_geometry::generate_quad_strip(camera_direction_lines));
+
+            has_unbuffered_changes = true;
+
+            selected_keyframe_index = 0;
         }
 
         if (input_state.is_just_pressed(EKey::r)) {
             camera_is_controlled_by_scripted_transform = not camera_is_controlled_by_scripted_transform;
+        }
+
+        if (input_state.is_just_pressed(EKey::h)) {
+            selected_keyframe_index =
+                math_utils::non_neg_mod(selected_keyframe_index - 1, cam_keyframe_indicators.size());
+            ski_tig.transform = cmr_scripted_transform.get_keyframe(selected_keyframe_index);
+            selected_keyframe_index_requires_update = true;
+        }
+
+        if (input_state.is_just_pressed(EKey::l)) {
+            selected_keyframe_index =
+                math_utils::non_neg_mod(selected_keyframe_index + 1, cam_keyframe_indicators.size());
+            ski_tig.transform = cmr_scripted_transform.get_keyframe(selected_keyframe_index);
+            selected_keyframe_index_requires_update = true;
+        }
+
+        if (input_state.is_just_pressed(EKey::m)) {
+            auto &selected_cam_keyframe_tig = cam_keyframe_indicators.at(selected_keyframe_index);
+
+            selected_cam_keyframe_tig.transform.set_transform_matrix(create_position_and_look_transform(
+                fps_camera.transform.get_translation(), fps_camera.transform.compute_forward_vector()));
+
+            cmr_scripted_transform.set_keyframe(selected_keyframe_index, fps_camera.transform);
         }
 
         if (camera_is_controlled_by_scripted_transform) {
@@ -189,25 +208,31 @@ int main() {
                                                       camera_quad_strip_ltw_id);
             batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
                 camera_quad_strip_ivp->id, camera_quad_strip_ivp->indices, camera_quad_strip_ivp->xyz_positions,
-                cam_ltw_indices);
+                cam_ltw_indices, has_unbuffered_changes);
+            has_unbuffered_changes = false;
             ltw_matrices[camera_quad_strip_ltw_id] = glm::mat4(1); // doesn't move
+
+            std::vector<unsigned int> selected_ltw_indices(ski_tig.ivps[0].xyz_positions.size(), ski_tig.id);
+            batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
+                ski_tig.ivps[0].id, ski_tig.ivps[0].indices, ski_tig.ivps[0].xyz_positions, selected_ltw_indices,
+                selected_keyframe_index_requires_update);
+            selected_keyframe_index_requires_update = false;
+            ltw_matrices[ski_tig.id] = ski_tig.transform.get_transform_matrix();
         }
 
-        std::vector<unsigned int> ltw_indices(ball.xyz_positions.size(), ball_ltw_id);
+        std::vector<unsigned int> ltw_indices(cyl.xyz_positions.size(), ball_ltw_id);
         batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
-            ball.id, ball.indices, ball.xyz_positions, ltw_indices);
+            cyl.id, cyl.indices, cyl.xyz_positions, ltw_indices);
 
         ltw_matrices[ball_ltw_id] = ball_transform.get_transform_matrix();
 
-        for (auto &cam_indicator_tig : cam_indicators) {
+        for (auto &cam_indicator_tig : cam_keyframe_indicators) {
             for (const auto &ivp : cam_indicator_tig.ivps) {
                 std::vector<unsigned int> ltw_indices(ivp.xyz_positions.size(), cam_indicator_tig.id);
                 batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
                     ivp.id, ivp.indices, ivp.xyz_positions, ltw_indices);
             }
 
-            /*p("tiggy");*/
-            /*p(cam_indicator_tig.transform);*/
             ltw_matrices[cam_indicator_tig.id] = cam_indicator_tig.transform.get_transform_matrix();
         }
 

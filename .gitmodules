@@ -70,3 +70,6 @@
 [submodule "src/graphics/scripted_transform"]
 	path = src/graphics/scripted_transform
 	url = git@github.com:cpp-toolbox/scripted_transform.git
+[submodule "src/utility/math_utils"]
+	path = src/utility/math_utils
+	url = git@github.com:cpp-toolbox/math_utils.git
