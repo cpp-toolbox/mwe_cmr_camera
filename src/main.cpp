@@ -19,6 +19,7 @@
 #include "graphics/fps_camera/fps_camera.hpp"
 #include "graphics/window/window.hpp"
 #include "graphics/colors/colors.hpp"
+#include "graphics/grid_font/grid_font.hpp"
 
 #include <iostream>
 #include <locale>
@@ -80,6 +81,11 @@ int main() {
     glBufferData(GL_UNIFORM_BUFFER, sizeof(ltw_matrices), ltw_matrices, GL_STATIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, ltw_matrices_gl_name);
 
+    vertex_geometry::Rectangle keyframe_time_bounding_rect(glm::vec3(0, 0, 0), .5, .5);
+    auto keyframe_time_text_ivp = get_text_geometry("cuppajoeman", keyframe_time_bounding_rect);
+    vertex_geometry::Rectangle indicator_bounding_rect(glm::vec3(0, 1, 0), .5, .5);
+    auto editing_indicator = get_text_geometry("x", indicator_bounding_rect);
+
     auto cam_indicator_ivp = vertex_geometry::generate_cylinder(16, 1, .12);
     vertex_geometry::translate_vertices_in_place(cam_indicator_ivp.xyz_positions, glm::vec3(0, -1, 0));
     auto cone = vertex_geometry::generate_cone(16, 1, .25);
@@ -112,6 +118,9 @@ int main() {
     ScriptedTransform cmr_scripted_transform(duration, tau);
     int num_samples = 1000;
 
+    bool editing_keyframe_time;
+    std::string keyframe_time_input;
+
     std::function<void(double)> tick = [&](double dt) {
         glViewport(0, 0, window_width_px, window_height_px);
 
@@ -123,6 +132,19 @@ int main() {
                                  input_state.is_pressed(EKey::SPACE), input_state.is_pressed(EKey::LEFT_SHIFT), dt);
 
         if (input_state.is_just_pressed(EKey::q)) {
+
+            double requested_time_value = 0;
+            try {
+                requested_time_value = std::stod(keyframe_time_input);
+                std::cout << "Converted time: " << requested_time_value << std::endl;
+            } catch (const std::invalid_argument &e) {
+                std::cout << "Invalid time: " << e.what() << std::endl;
+            } catch (const std::out_of_range &e) {
+                std::cout << "Out of range: " << e.what() << std::endl;
+            }
+
+            // TODO: now do something with requested time value
+
             auto cam_indicator_tig_copy = cam_indicator_tig_for_copying;
             cam_indicator_tig_copy.id = ltw_id_generator.get_id();
             for (auto &ivp : cam_indicator_tig_copy.ivps) {
@@ -133,6 +155,32 @@ int main() {
             cam_keyframe_indicators.push_back(cam_indicator_tig_copy);
 
             cmr_scripted_transform.append_keyframe(fps_camera.transform);
+        }
+
+        if (input_state.is_just_pressed(EKey::t)) {
+            editing_keyframe_time = not editing_keyframe_time;
+        }
+
+        if (editing_keyframe_time) {
+            for (const auto key : input_state.get_just_pressed_key_strings()) {
+                keyframe_time_input += key;
+            }
+
+            if (input_state.is_just_pressed(EKey::BACKSPACE)) {
+                if (!keyframe_time_input.empty()) {
+                    keyframe_time_input.pop_back();
+                }
+            }
+            keyframe_time_text_ivp = get_text_geometry(keyframe_time_input, keyframe_time_bounding_rect);
+
+            unsigned int ltw_id = 900;
+            std::vector<unsigned int> edit_indicator_ltw_indices(editing_indicator.xyz_positions.size(), ltw_id);
+            batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
+                editing_indicator.id, editing_indicator.indices, editing_indicator.xyz_positions,
+                edit_indicator_ltw_indices, true);
+
+            ltw_matrices[ltw_id] =
+                create_billboard_transform_with_lock_axis(glm::vec3(0, 1, 0), -fps_camera.transform.get_translation());
         }
 
         if (input_state.is_just_pressed(EKey::p)) {
@@ -168,20 +216,27 @@ int main() {
 
         if (input_state.is_just_pressed(EKey::r)) {
             camera_is_controlled_by_scripted_transform = not camera_is_controlled_by_scripted_transform;
+            if (not camera_is_controlled_by_scripted_transform) {
+                cmr_scripted_transform.reset();
+            }
         }
 
-        if (input_state.is_just_pressed(EKey::h)) {
-            selected_keyframe_index =
-                math_utils::non_neg_mod(selected_keyframe_index - 1, cam_keyframe_indicators.size());
-            ski_tig.transform = cmr_scripted_transform.get_keyframe(selected_keyframe_index);
-            selected_keyframe_index_requires_update = true;
-        }
+        if (cmr_scripted_transform.get_num_keyframes() >= 1) {
+            if (input_state.is_just_pressed(EKey::h)) {
+                selected_keyframe_index =
+                    math_utils::non_neg_mod(selected_keyframe_index - 1, cam_keyframe_indicators.size());
+                ski_tig.transform = cmr_scripted_transform.get_keyframe(selected_keyframe_index);
+                keyframe_time_input = "TODO: replace with the time stored in that keyframe";
+                selected_keyframe_index_requires_update = true;
+            }
 
-        if (input_state.is_just_pressed(EKey::l)) {
-            selected_keyframe_index =
-                math_utils::non_neg_mod(selected_keyframe_index + 1, cam_keyframe_indicators.size());
-            ski_tig.transform = cmr_scripted_transform.get_keyframe(selected_keyframe_index);
-            selected_keyframe_index_requires_update = true;
+            if (input_state.is_just_pressed(EKey::l)) {
+                selected_keyframe_index =
+                    math_utils::non_neg_mod(selected_keyframe_index + 1, cam_keyframe_indicators.size());
+                ski_tig.transform = cmr_scripted_transform.get_keyframe(selected_keyframe_index);
+                keyframe_time_input = "TODO: replace with the time stored in that keyframe";
+                selected_keyframe_index_requires_update = true;
+            }
         }
 
         if (input_state.is_just_pressed(EKey::m)) {
@@ -189,6 +244,18 @@ int main() {
 
             selected_cam_keyframe_tig.transform.set_transform_matrix(create_position_and_look_transform(
                 fps_camera.transform.get_translation(), fps_camera.transform.compute_forward_vector()));
+
+            double requested_time_value = 0;
+            try {
+                requested_time_value = std::stod(keyframe_time_input);
+                std::cout << "Converted time: " << requested_time_value << std::endl;
+            } catch (const std::invalid_argument &e) {
+                std::cout << "Invalid time: " << e.what() << std::endl;
+            } catch (const std::out_of_range &e) {
+                std::cout << "Out of range: " << e.what() << std::endl;
+            }
+
+            // TODO: use the requested time value here
 
             cmr_scripted_transform.set_keyframe(selected_keyframe_index, fps_camera.transform);
         }
@@ -219,6 +286,19 @@ int main() {
             selected_keyframe_index_requires_update = false;
             ltw_matrices[ski_tig.id] = ski_tig.transform.get_transform_matrix();
         }
+
+        // test draw character
+
+        unsigned int ltw_id = 500;
+        std::vector<unsigned int> char_ltw_indices(keyframe_time_text_ivp.xyz_positions.size(), ltw_id);
+        batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
+            keyframe_time_text_ivp.id, keyframe_time_text_ivp.indices, keyframe_time_text_ivp.xyz_positions,
+            char_ltw_indices, true);
+
+        ltw_matrices[ltw_id] =
+            create_billboard_transform_with_lock_axis(glm::vec3(0, 1, 0), -fps_camera.transform.get_translation());
+
+        //
 
         std::vector<unsigned int> ltw_indices(cyl.xyz_positions.size(), ball_ltw_id);
         batcher.cwl_v_transformation_ubos_1024_with_solid_color_shader_batcher.queue_draw(
